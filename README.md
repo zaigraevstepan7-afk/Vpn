@@ -6,22 +6,18 @@ Android-клиент для прокси-протоколов **VMess / VLESS / 
 
 ---
 
-## ⚠️ Что важно понять перед сборкой
+## Что работает
 
-Проект — это **исходный код**, который открывается и собирается в Android Studio, а **не готовый APK**. Причина простая: APK с рабочим туннелем нельзя собрать без нативного ядра, а нативное ядро нельзя скомпилировать в той среде, где этот код создавался (нет Go/gomobile-тулчейна и Android SDK).
+Нативное ядро **Xray уже подключено** — туннель реально гонит трафик через выбранный сервер. Используется `libv2ray.aar` (AndroidLibXrayLite v26.6.2): современный API ядра принимает дескриптор `tun` напрямую (`startLoop(config, tunFd)`) и сам обслуживает устройство через `tun`-inbound, поэтому отдельный tun2socks не нужен. Сокеты самого ядра не зацикливаются в туннель, потому что приложение исключает свой UID из маршрута (`addDisallowedApplication`).
 
-Что **полностью работает сразу** после сборки:
+Работает после установки APK:
 
-- загрузка и парсинг подписки (проверено на реальных данных — см. ниже);
+- загрузка и парсинг подписки (VMess / VLESS / Trojan / Shadowsocks);
 - весь UI: список серверов, поиск, выбор, TCP-пинг, статусы подключения;
-- генерация валидного Xray-JSON-конфига под каждый сервер;
-- поднятие/снятие самого VPN-интерфейса (`tun`) системой.
+- генерация валидного Xray-JSON-конфига (`tun` + `socks` inbound) под каждый сервер;
+- поднятие `tun`, запуск ядра и **реальное проксирование трафика**.
 
-Что требует **одного внешнего шага** (подключить ядро — см. раздел «Подключение нативного ядра»):
-
-- собственно проксирование трафика через туннель. Без ядра приложение поднимает `tun`, честно сообщает, что ядро не активно, и снимает интерфейс — трафик при этом **не перехватывается** (это сделано осознанно, чтобы не было «чёрной дыры», которая молча роняет интернет).
-
-То есть разделение такое: **парсинг + конфиг + UI + сервис — готовы и проверены; нативный прокси-движок подключается одной правкой.**
+Ядро (`libv2ray.aar`, ~56 МБ) **не лежит в репозитории** — оно скачивается на этапе сборки (CI-workflow тянет его из релизов AndroidLibXrayLite; для локальной сборки положи сам — см. «Нативное ядро»).
 
 ---
 
@@ -39,12 +35,11 @@ app/src/main/java/com/nebula/vpn/
 │   ├── VpnManager.kt            # глобальное состояние VPN (singleton, StateFlow)
 │   └── V2RayVpnService.kt       # VpnService: строит tun, foreground-уведомление
 └── core/
-    ├── V2RayCore.kt             # интерфейс ядра + StubCore (заглушка, по умолчанию)
-    └── XrayCore.kt.template      # РЕАЛЬНАЯ реализация на libv2ray (не компилируется,
-                                  #   пока не подключишь .aar — см. ниже)
+    ├── V2RayCore.kt             # интерфейс ядра + CoreController + StubCore (фолбэк)
+    └── XrayCore.kt              # РЕАЛЬНАЯ реализация на libv2ray (Xray-core)
 ```
 
-Ключевая идея — **подключаемое ядро**: `CoreController.factory` отдаёт реализацию `V2RayCore`. По умолчанию это `StubCore` (`isAvailable = false`), поэтому проект **собирается и запускается без всяких .aar**. Когда подключаешь настоящее ядро — переопределяешь фабрику, и тот же сервис начинает реально гнать трафик.
+Ключевая идея — **подключаемое ядро**: `CoreController.factory` отдаёт реализацию `V2RayCore`. В `MainActivity.onCreate` фабрика переключена на `XrayCore` — настоящее ядро Xray. `StubCore` остаётся как безопасный фолбэк (`isAvailable = false`): если `.aar` по какой-то причине не подключён, приложение не «роняет» интернет чёрной дырой, а честно сообщает об этом.
 
 ### Поддерживаемые протоколы
 
@@ -60,26 +55,31 @@ app/src/main/java/com/nebula/vpn/
 
 ## Как получить APK
 
-Готового APK в комплекте нет (его нельзя собрать без Android SDK + Google Maven). Два пути:
-
 ### Вариант А — собрать в облаке (без локального тулчейна)
 В репозитории лежит workflow `.github/workflows/build-apk.yml`:
 
-1. Залить проект в репозиторий на GitHub (`git init && git add . && git commit && git push`).
+1. Запушить в репозиторий на GitHub.
 2. Workflow запустится сам на push (или вкладка **Actions → Build APK → Run workflow**).
-3. На раннере GitHub доступны `dl.google.com` / `maven.google.com`, поэтому всё скачивается и собирается.
+3. Раннер сам скачивает `libv2ray.aar` из релизов AndroidLibXrayLite и собирает APK с Google Maven.
 4. Скачать `NebulaVPN-debug-apk` из артефактов завершённого запуска → внутри `app-debug.apk`.
 5. Закинуть на телефон, разрешить установку из неизвестных источников, поставить.
 
 ### Вариант Б — собрать локально
 ```bash
 # нужен установленный Android SDK (через Android Studio или cmdline-tools) и JDK 17
+
+# 1) положить нативное ядро (один раз):
+mkdir -p app/libs
+curl -fL -o app/libs/libv2ray.aar \
+  https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.6.2/libv2ray.aar
+
+# 2) собрать:
 ./gradlew assembleDebug
 # результат: app/build/outputs/apk/debug/app-debug.apk
 ```
-Или открыть в Android Studio: **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+Или открыть в Android Studio: **Build → Build APK(s)** (предварительно положив `app/libs/libv2ray.aar`).
 
-> Этот `app-debug.apk` устанавливается и запускается полностью: подписка, список серверов, поиск, пинг, генерация конфига, поднятие VPN-интерфейса. Реального проксирования трафика не будет, пока не подключишь нативное ядро (раздел ниже) — по умолчанию стоит `StubCore`.
+> Готовый `app-debug.apk` ставится и **реально проксирует трафик** через выбранный сервер. APK ~90 МБ: внутри нативное ядро (`libgojni.so` для arm64-v8a + armeabi-v7a) и базы `geoip.dat`/`geosite.dat`.
 
 ---
 
@@ -97,23 +97,20 @@ app/src/main/java/com/nebula/vpn/
 
 ---
 
-## Подключение нативного ядра (Xray)
+## Нативное ядро (Xray) — как это работает
 
-Чтобы туннель реально заработал, нужно одно: ядро Xray, собранное под Android как `.aar`, плюс библиотека tun2socks.
+Туннель уже работает; раздел для тех, кто хочет понять связку.
 
-1. **Получить `libv2ray.aar`.** Либо собрать самому через `gomobile bind` из [XTLS/Xray-core](https://github.com/XTLS/Xray-core) + [2dust/AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite), либо взять готовый `.aar` из релизов/исходников v2rayNG.
-2. Положить его в `app/libs/libv2ray.aar` и раскомментировать строку в `app/build.gradle.kts`:
-   ```kotlin
-   // implementation(files("libs/libv2ray.aar"))
-   ```
-3. Добавить tun2socks (в v2rayNG это `tun2socks` через `hev-socks5-tunnel`) — нативная либа, которая заворачивает пакеты из `tun` в локальный SOCKS, поднятый ядром на `127.0.0.1:10808`.
-4. Переименовать `core/XrayCore.kt.template` → `core/XrayCore.kt`. В нём уже расписаны коллбэки `protect()/setup()/shutdown()/onEmitStatus()` под интерфейс libv2ray; место запуска tun2socks помечено `TODO`.
-5. Переключить фабрику — например в `MainActivity.onCreate` или в `Application`:
-   ```kotlin
-   CoreController.factory = { XrayCore() }
-   ```
+- **Библиотека:** `libv2ray.aar` (AndroidLibXrayLite v26.6.2) — Xray-core, собранный под Android через gomobile. В репозиторий не коммитится (~56 МБ), а скачивается из релизов: путь `app/libs/libv2ray.aar`, подключение — `implementation(files("libs/libv2ray.aar"))` в `app/build.gradle.kts`.
+- **Запуск:** `core/XrayCore.kt` инициализирует окружение (`Libv2ray.initCoreEnv`, `Seq.setContext` — чтобы ядро читало `geoip.dat`/`geosite.dat` из ассетов), создаёт `CoreController` и зовёт `controller.startLoop(configJson, tunFd)`.
+- **`tun` без tun2socks:** в этой версии ядро само обслуживает устройство. `V2RayVpnService` строит `tun` и передаёт его fd в `startLoop`; ядро читает fd из env-переменной `xray.tun.fd` через `tun`-inbound в конфиге (`XrayConfigBuilder` добавляет его). Поэтому badvpn/hev-socks5-tunnel не нужен.
+- **Без петли:** сокеты ядра не уходят обратно в `tun`, потому что `buildTun()` исключает UID приложения из маршрута через `addDisallowedApplication(packageName)` — это заменяет пер-сокетный `protect()`.
+- **ABI:** в `app/build.gradle.kts` через `ndk.abiFilters` оставлены `arm64-v8a` и `armeabi-v7a`. Чтобы собрать под эмулятор x86 — допиши нужный ABI.
 
-После этого `V2RayVpnService` отдаёт ядру файловый дескриптор `tun` и сгенерированный JSON, и трафик идёт через выбранный сервер.
+Фабрика ядра переключается в `MainActivity.onCreate`:
+```kotlin
+CoreController.factory = { com.nebula.vpn.core.XrayCore() }
+```
 
 ---
 

@@ -7,14 +7,13 @@ import android.util.Log
 /**
  * Abstraction over the native proxy engine.
  *
- * The project ships with [StubCore] so everything compiles and the UI/subscription
- * pipeline runs immediately. To get a real tunnel, add the Xray gomobile library
- * (`libv2ray.aar`) plus a tun2socks library, rename `XrayCore.kt.template` to
- * `XrayCore.kt`, and register it:
+ * The real engine is [XrayCore] (backed by `libv2ray.aar`), registered in
+ * `MainActivity.onCreate`:
  *
  *     CoreController.factory = { XrayCore() }
  *
- * (see README → "Wiring the native core").
+ * [StubCore] remains the default fallback so the app still compiles and runs if
+ * the native core is ever absent (see README → "Нативное ядро").
  */
 interface V2RayCore {
 

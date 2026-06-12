@@ -7,30 +7,61 @@ import org.json.JSONObject
  * Builds the JSON configuration consumed by the Xray core (libv2ray).
  *
  * Layout:
- *   - a local SOCKS inbound on 127.0.0.1:[socksPort] that tun2socks feeds into
+ *   - a "tun" inbound: the core reads the VPN tun fd (passed to startLoop via the
+ *     `xray.tun.fd` env var) and drives the device itself — this is what actually
+ *     captures and tunnels device traffic
+ *   - a local SOCKS inbound on 127.0.0.1:[socksPort] (handy for testing / apps)
  *   - the selected server as the primary outbound
- *   - freedom/blackhole outbounds + basic routing (block ads/private, bypass LAN)
+ *   - freedom/blackhole outbounds + basic routing (bypass LAN, direct bittorrent)
  */
 object XrayConfigBuilder {
 
     const val SOCKS_PORT = 10808
 
-    fun build(server: ServerConfig, socksPort: Int = SOCKS_PORT): String {
+    fun build(server: ServerConfig, socksPort: Int = SOCKS_PORT, mtu: Int = 1500): String {
         val root = JSONObject()
 
         root.put("log", JSONObject().put("loglevel", "warning"))
 
-        // ── inbound ──────────────────────────────────────────────────────────
+        // Stats + level-8 policy: the core's CoreController grabs the stats
+        // manager on startup, so these blocks must be present.
+        root.put("stats", JSONObject())
+        root.put("policy", JSONObject()
+            .put("levels", JSONObject().put("8", JSONObject()
+                .put("handshake", 4)
+                .put("connIdle", 300)
+                .put("uplinkOnly", 1)
+                .put("downlinkOnly", 1)))
+            .put("system", JSONObject()
+                .put("statsOutboundUplink", true)
+                .put("statsOutboundDownlink", true)))
+
+        // ── inbounds ──────────────────────────────────────────────────────────
+        val sniffing = JSONObject()
+            .put("enabled", true)
+            .put("destOverride", JSONArray(listOf("http", "tls", "quic")))
+
+        val tunInbound = JSONObject()
+            .put("tag", "tun")
+            .put("protocol", "tun")
+            .put("settings", JSONObject()
+                .put("name", "xray0")
+                .put("MTU", mtu)
+                .put("userLevel", 8))
+            .put("sniffing", JSONObject(sniffing.toString()))
+
         val socksInbound = JSONObject()
             .put("tag", "socks-in")
             .put("port", socksPort)
             .put("listen", "127.0.0.1")
             .put("protocol", "socks")
-            .put("settings", JSONObject().put("auth", "noauth").put("udp", true))
-            .put("sniffing", JSONObject()
-                .put("enabled", true)
-                .put("destOverride", JSONArray(listOf("http", "tls"))))
-        root.put("inbounds", JSONArray().put(socksInbound))
+            .put("settings", JSONObject().put("auth", "noauth").put("udp", true).put("userLevel", 8))
+            .put("sniffing", JSONObject(sniffing.toString()))
+        root.put("inbounds", JSONArray().put(tunInbound).put(socksInbound))
+
+        // ── DNS ───────────────────────────────────────────────────────────────
+        root.put("dns", JSONObject()
+            .put("servers", JSONArray(listOf("1.1.1.1", "8.8.8.8"))))
 
         // ── outbounds ────────────────────────────────────────────────────────
         val proxyOut = buildOutbound(server)

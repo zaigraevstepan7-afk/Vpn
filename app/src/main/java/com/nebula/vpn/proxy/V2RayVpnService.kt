@@ -60,15 +60,23 @@ class V2RayVpnService : VpnService() {
         }
         tunInterface = tun
 
-        val configJson = XrayConfigBuilder.build(server)
-        val started = CoreController.start(this, tun, configJson) { status ->
-            VpnManager.setMessage(status)
+        val configJson = XrayConfigBuilder.build(server, mtu = MTU)
+        val started = try {
+            CoreController.start(this, tun, configJson) { status ->
+                VpnManager.setMessage(status)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Core failed to start", e)
+            runCatching { tun.close() }
+            tunInterface = null
+            fail("Core failed to start: ${e.message}")
+            return
         }
 
         if (started) {
             VpnManager.setState(VpnState.CONNECTED)
         } else {
-            // No native core linked yet: the tun is up but nothing tunnels traffic,
+            // No native core linked: the tun is up but nothing tunnels traffic,
             // which would blackhole the connection — so tear it down and report.
             runCatching { tun.close() }
             tunInterface = null
@@ -79,7 +87,7 @@ class V2RayVpnService : VpnService() {
     private fun buildTun(server: ServerConfig): ParcelFileDescriptor {
         val builder = Builder()
             .setSession("Nebula VPN")
-            .setMtu(1500)
+            .setMtu(MTU)
             .addAddress(PRIVATE_VLAN4, 30)
             .addAddress(PRIVATE_VLAN6, 126)
             .addDnsServer("1.1.1.1")
@@ -171,6 +179,7 @@ class V2RayVpnService : VpnService() {
         private const val NOTIF_ID = 1
         private const val PRIVATE_VLAN4 = "10.10.10.10"
         private const val PRIVATE_VLAN6 = "fc00::10:10:10:10"
+        private const val MTU = 1500
 
         fun start(context: Context, server: ServerConfig) {
             val intent = Intent(context, V2RayVpnService::class.java)

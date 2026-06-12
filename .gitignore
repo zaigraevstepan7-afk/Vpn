@@ -10,5 +10,8 @@
 /app/build/
 *.apk
 *.aab
+# The native core (~56 MB) is fetched at build time, not committed — see
+# README / the CI workflow. Keeps the repo lean and under GitHub's file limits.
+/app/libs/*.aar
 # keep the wrapper jar tracked (needed for ./gradlew on a clean checkout)
 !gradle/wrapper/gradle-wrapper.jar

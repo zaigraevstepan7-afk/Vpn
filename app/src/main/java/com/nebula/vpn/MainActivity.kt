@@ -48,8 +48,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // To run a REAL tunnel, link the native core and uncomment:
-        // CoreController.factory = { com.nebula.vpn.core.XrayCore() }
+        // Use the real native Xray core so traffic is actually tunnelled.
+        com.nebula.vpn.core.CoreController.factory = { com.nebula.vpn.core.XrayCore() }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED

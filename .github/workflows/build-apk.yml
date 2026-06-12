@@ -32,6 +32,14 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Fetch native Xray core (libv2ray.aar)
+        run: |
+          mkdir -p app/libs
+          curl -fL --retry 4 --retry-delay 4 \
+            -o app/libs/libv2ray.aar \
+            "https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.6.2/libv2ray.aar"
+          ls -la app/libs
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 

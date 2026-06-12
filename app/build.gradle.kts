@@ -14,6 +14,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        // The native Xray core (libgojni.so) ships for several ABIs inside
+        // libv2ray.aar. Limit the packaged set to keep the APK reasonable.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
@@ -61,12 +67,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // ── Xray / V2Ray native core ────────────────────────────────────────────
-    // The actual proxy engine is a Go library exposed to Android via gomobile.
-    // Drop `libv2ray.aar` into app/libs/ (see README) and uncomment the line
-    // below, OR pull it from JitPack. The app compiles and runs WITHOUT it —
-    // subscription parsing, config generation and the UI are fully functional;
-    // only the live tunnel needs the core linked in.
-    //
-    // implementation(files("libs/libv2ray.aar"))
-    // implementation(files("libs/tun2socks.aar"))
+    // The real proxy engine: Xray-core exposed to Android via gomobile.
+    // This libv2ray.aar (AndroidLibXrayLite v26.6.2) bundles the native core
+    // (libgojni.so) plus geoip/geosite assets. Its CoreController handles the
+    // tun device internally — no separate tun2socks library is required.
+    implementation(files("libs/libv2ray.aar"))
 }
