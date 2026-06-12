@@ -23,6 +23,11 @@ class SubscriptionRepository(context: Context) {
         get() = prefs.getString(KEY_URL, DEFAULT_SUBSCRIPTION) ?: DEFAULT_SUBSCRIPTION
         set(value) = prefs.edit().putString(KEY_URL, value).apply()
 
+    /** Id of the last server the user picked, so the choice survives app restarts. */
+    var selectedId: String?
+        get() = prefs.getString(KEY_SELECTED, null)
+        set(value) = prefs.edit().putString(KEY_SELECTED, value).apply()
+
     /** Load whatever was cached on the last successful fetch. */
     fun loadCached(): List<ServerConfig> {
         val raw = prefs.getString(KEY_RAW, null) ?: return emptyList()
@@ -74,6 +79,7 @@ class SubscriptionRepository(context: Context) {
         private val SCHEMES = listOf("vmess://", "vless://", "trojan://", "ss://")
         private const val KEY_RAW = "sub_raw"
         private const val KEY_URL = "sub_url"
+        private const val KEY_SELECTED = "selected_id"
 
         /**
          * Latency in ms of a raw TCP handshake to the server, or -1 on failure.

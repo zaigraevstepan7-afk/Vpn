@@ -72,7 +72,7 @@ data class ServerConfig(
                 sni = json.optStringOrEmpty("sni"),
                 alpn = json.optStringOrEmpty("alpn"),
                 fingerprint = json.optStringOrEmpty("fp"),
-                path = if (net == "grpc") json.optStringOrEmpty("path") else json.optStringOrEmpty("path"),
+                path = json.optStringOrEmpty("path"),
                 host = json.optStringOrEmpty("host"),
                 raw = uri
             )

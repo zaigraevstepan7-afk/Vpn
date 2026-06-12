@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -38,7 +39,9 @@ import com.nebula.vpn.proxy.Protocol
 import com.nebula.vpn.proxy.ServerConfig
 import com.nebula.vpn.proxy.V2RayVpnService
 import com.nebula.vpn.proxy.VpnState
+import com.nebula.vpn.ui.LocationState
 import com.nebula.vpn.ui.MainViewModel
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -77,6 +80,11 @@ private fun HomeScreen(vm: MainViewModel) {
     val error by vm.error.collectAsState()
     val state by vm.vpnState.collectAsState()
     val message by vm.vpnMessage.collectAsState()
+    val location by vm.location.collectAsState()
+    val locationLoading by vm.locationLoading.collectAsState()
+    val downlink by vm.downlink.collectAsState()
+    val uplink by vm.uplink.collectAsState()
+    val pingingAll by vm.pingingAll.collectAsState()
 
     var query by remember { mutableStateOf("") }
     val filtered = remember(servers, query) {
@@ -135,7 +143,20 @@ private fun HomeScreen(vm: MainViewModel) {
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
 
-            ConnectCard(state = state, server = selected, message = message, onToggle = ::toggle)
+            ConnectCard(
+                state = state,
+                server = selected,
+                message = message,
+                downlink = downlink,
+                uplink = uplink,
+                onToggle = ::toggle
+            )
+
+            LocationCard(
+                state = location,
+                loading = locationLoading,
+                onRefresh = { vm.refreshLocation() }
+            )
 
             if (loading) {
                 LinearProgressIndicator(
@@ -172,10 +193,18 @@ private fun HomeScreen(vm: MainViewModel) {
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                TextButton(onClick = { vm.pingTop() }) {
-                    Icon(Icons.Filled.Bolt, null, Modifier.size(18.dp))
+                TextButton(onClick = { vm.pingAll() }, enabled = !pingingAll) {
+                    if (pingingAll) {
+                        CircularProgressIndicator(
+                            Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(Icons.Filled.Bolt, null, Modifier.size(18.dp))
+                    }
                     Spacer(Modifier.width(4.dp))
-                    Text("Пинг")
+                    Text(if (pingingAll) "Пингую…" else "Пинг всех")
                 }
             }
 
@@ -202,6 +231,8 @@ private fun ConnectCard(
     state: VpnState,
     server: ServerConfig?,
     message: String,
+    downlink: Long,
+    uplink: Long,
     onToggle: () -> Unit
 ) {
     val (label, color) = when (state) {
@@ -265,6 +296,109 @@ private fun ConnectCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+
+        if (state == VpnState.CONNECTED) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SpeedReadout("↓", downlink, Color(0xFF36D399))
+                SpeedReadout("↑", uplink, Color(0xFF6C8CFF))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeedReadout(arrow: String, bytesPerSec: Long, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(arrow, color = color, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Spacer(Modifier.width(4.dp))
+        Text(
+            formatSpeed(bytesPerSec),
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/** Bytes/second → human readable, e.g. 1536000 → "1.5 MB/s". */
+private fun formatSpeed(bps: Long): String {
+    if (bps < 1024) return "$bps B/s"
+    val kb = bps / 1024.0
+    if (kb < 1024) return String.format(Locale.US, "%.1f KB/s", kb)
+    val mb = kb / 1024.0
+    return String.format(Locale.US, "%.1f MB/s", mb)
+}
+
+@Composable
+private fun LocationCard(
+    state: LocationState,
+    loading: Boolean,
+    onRefresh: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val known = state as? LocationState.Known
+            Text(
+                known?.info?.flag?.takeIf { it.isNotEmpty() } ?: "🌐",
+                fontSize = 26.sp
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Моё местоположение",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp
+                )
+                Text(
+                    known?.info?.country ?: "Определяется…",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (known != null) {
+                    Text(
+                        buildString {
+                            append(known.info.ip)
+                            append(" • ")
+                            append(if (known.viaVpn) "через VPN" else "ваш реальный IP")
+                        },
+                        color = if (known.viaVpn) Color(0xFF36D399)
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (loading) {
+                CircularProgressIndicator(
+                    Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                IconButton(onClick = onRefresh) {
+                    Icon(
+                        Icons.Filled.Public,
+                        contentDescription = "Обновить геолокацию",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }

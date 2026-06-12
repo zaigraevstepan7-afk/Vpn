@@ -6,7 +6,15 @@ import android.os.ParcelFileDescriptor
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
+import com.nebula.vpn.proxy.VpnManager
 import go.Seq
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
@@ -37,6 +45,7 @@ class XrayCore : V2RayCore {
     private var controller: CoreController? = null
     @Volatile
     private var statusCallback: ((String) -> Unit)? = null
+    private var statsScope: CoroutineScope? = null
 
     override fun start(
         service: VpnService,
@@ -67,15 +76,37 @@ class XrayCore : V2RayCore {
         if (c.isRunning) {
             onStatus("Connected")
             Log.i(TAG, "Xray running (${runCatching { Libv2ray.checkVersionX() }.getOrDefault("?")})")
+            startStatsPolling(c)
         } else {
             throw IllegalStateException("Xray core did not start")
         }
     }
 
     override fun stop() {
+        statsScope?.cancel()
+        statsScope = null
+        VpnManager.setSpeed(0, 0)
         runCatching { controller?.stopLoop() }
         controller = null
         statusCallback = null
+    }
+
+    /**
+     * Poll the proxy outbound's traffic counters once a second. `queryStats`
+     * returns the bytes accumulated since the previous call and resets the
+     * counter, so the value over a ~1s tick is the live throughput in bytes/sec.
+     */
+    private fun startStatsPolling(c: CoreController) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        statsScope = scope
+        scope.launch {
+            while (isActive) {
+                delay(1_000)
+                val down = runCatching { c.queryStats(PROXY_TAG, "downlink") }.getOrDefault(0L)
+                val up = runCatching { c.queryStats(PROXY_TAG, "uplink") }.getOrDefault(0L)
+                VpnManager.setSpeed(down.coerceAtLeast(0), up.coerceAtLeast(0))
+            }
+        }
     }
 
     /** One-time native env init: asset path (geoip/geosite) + XUDP base key. */
@@ -101,6 +132,7 @@ class XrayCore : V2RayCore {
 
     private companion object {
         const val TAG = "XrayCore"
+        const val PROXY_TAG = "proxy"
         val envInitialized = AtomicBoolean(false)
     }
 }

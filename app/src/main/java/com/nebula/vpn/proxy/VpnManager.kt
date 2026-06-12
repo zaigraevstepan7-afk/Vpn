@@ -18,7 +18,19 @@ object VpnManager {
     private val _message = MutableStateFlow("")
     val message: StateFlow<String> = _message.asStateFlow()
 
+    // Live throughput in bytes/second, pushed by the running core.
+    private val _downlink = MutableStateFlow(0L)
+    val downlink: StateFlow<Long> = _downlink.asStateFlow()
+
+    private val _uplink = MutableStateFlow(0L)
+    val uplink: StateFlow<Long> = _uplink.asStateFlow()
+
     fun setState(s: VpnState) { _state.value = s }
     fun setActiveServer(s: ServerConfig?) { _activeServer.value = s }
     fun setMessage(m: String) { _message.value = m }
+
+    fun setSpeed(downBytesPerSec: Long, upBytesPerSec: Long) {
+        _downlink.value = downBytesPerSec
+        _uplink.value = upBytesPerSec
+    }
 }
