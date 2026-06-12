@@ -19,6 +19,19 @@ class SubscriptionRepository(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("nebula", Context.MODE_PRIVATE)
 
+    init {
+        // Migrate installs that still hold a superseded default URL: switch to the
+        // current default and drop the stale cache/selection so the new list loads.
+        val saved = prefs.getString(KEY_URL, null)
+        if (saved != null && saved in LEGACY_DEFAULTS) {
+            prefs.edit()
+                .putString(KEY_URL, DEFAULT_SUBSCRIPTION)
+                .remove(KEY_RAW)
+                .remove(KEY_SELECTED)
+                .apply()
+        }
+    }
+
     var subscriptionUrl: String
         get() = prefs.getString(KEY_URL, DEFAULT_SUBSCRIPTION) ?: DEFAULT_SUBSCRIPTION
         set(value) = prefs.edit().putString(KEY_URL, value).apply()
@@ -74,7 +87,12 @@ class SubscriptionRepository(context: Context) {
     companion object {
         // The subscription the project ships with. Replace it in-app at any time.
         const val DEFAULT_SUBSCRIPTION =
+            "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt"
+
+        // Older defaults; an install holding one of these is migrated to the current one.
+        private val LEGACY_DEFAULTS = setOf(
             "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/v2ray/all_sub.txt"
+        )
 
         private val SCHEMES = listOf("vmess://", "vless://", "trojan://", "ss://")
         private const val KEY_RAW = "sub_raw"
