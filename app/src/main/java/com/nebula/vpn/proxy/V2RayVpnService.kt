@@ -60,7 +60,7 @@ class V2RayVpnService : VpnService() {
         }
         tunInterface = tun
 
-        val configJson = XrayConfigBuilder.build(server, mtu = MTU)
+        val configJson = XrayConfigBuilder.build(server)
         val started = try {
             CoreController.start(this, tun, configJson) { status ->
                 VpnManager.setMessage(status)
@@ -73,27 +73,39 @@ class V2RayVpnService : VpnService() {
             return
         }
 
-        if (started) {
-            VpnManager.setState(VpnState.CONNECTED)
-        } else {
+        if (!started) {
             // No native core linked: the tun is up but nothing tunnels traffic,
             // which would blackhole the connection — so tear it down and report.
             runCatching { tun.close() }
             tunInterface = null
             fail("Connected at the Android layer, but the Xray core is not linked. See README.")
+            return
         }
+
+        // Bridge the tun device to the core's SOCKS inbound via hev-socks5-tunnel.
+        try {
+            TProxyService.start(filesDir, tun, XrayConfigBuilder.SOCKS_PORT, MTU)
+        } catch (e: Throwable) {
+            Log.e(TAG, "tun2socks failed to start", e)
+            CoreController.stop()
+            runCatching { tun.close() }
+            tunInterface = null
+            fail("tun2socks failed: ${e.message}")
+            return
+        }
+        VpnManager.setState(VpnState.CONNECTED)
     }
 
     private fun buildTun(server: ServerConfig): ParcelFileDescriptor {
+        // IPv4-only tun: hev-socks5-tunnel is configured for IPv4, so we don't
+        // capture IPv6 (avoids a v6 black-hole when the route has no handler).
         val builder = Builder()
-            .setSession("Nebula VPN")
+            .setSession("Root VPN")
             .setMtu(MTU)
             .addAddress(PRIVATE_VLAN4, 30)
-            .addAddress(PRIVATE_VLAN6, 126)
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
             .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
 
         // Don't route this app's own traffic through the tunnel (avoids loops).
         runCatching { builder.addDisallowedApplication(packageName) }
@@ -105,6 +117,7 @@ class V2RayVpnService : VpnService() {
     }
 
     private fun stopVpn() {
+        TProxyService.stop()
         CoreController.stop()
         runCatching { tunInterface?.close() }
         tunInterface = null
@@ -128,6 +141,7 @@ class V2RayVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        TProxyService.stop()
         CoreController.stop()
         runCatching { tunInterface?.close() }
         super.onDestroy()
@@ -178,7 +192,6 @@ class V2RayVpnService : VpnService() {
         private const val CHANNEL_ID = "nebula_vpn"
         private const val NOTIF_ID = 1
         private const val PRIVATE_VLAN4 = "10.10.10.10"
-        private const val PRIVATE_VLAN6 = "fc00::10:10:10:10"
         private const val MTU = 1500
 
         fun start(context: Context, server: ServerConfig) {

@@ -69,9 +69,11 @@ class XrayCore : V2RayCore {
         controller = c
 
         onStatus("Starting Xray core…")
+        // tunFd = 0: the core only runs the SOCKS inbound. The tun device is
+        // driven by hev-socks5-tunnel (TProxyService), which forwards into SOCKS.
         // Throws on a bad config or startup failure; the caller (V2RayVpnService)
-        // catches it, tears down the tun and reports the error.
-        c.startLoop(configJson, tun.fd)
+        // catches it, tears down the tunnel and reports the error.
+        c.startLoop(configJson, 0)
 
         if (c.isRunning) {
             onStatus("Connected")

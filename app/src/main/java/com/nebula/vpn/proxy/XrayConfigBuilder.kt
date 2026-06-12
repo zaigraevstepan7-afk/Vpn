@@ -23,7 +23,7 @@ object XrayConfigBuilder {
         "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fc00::/7", "fe80::/10"
     )
 
-    fun build(server: ServerConfig, socksPort: Int = SOCKS_PORT, mtu: Int = 1500): String {
+    fun build(server: ServerConfig, socksPort: Int = SOCKS_PORT): String {
         val root = JSONObject()
 
         root.put("log", JSONObject().put("loglevel", "warning"))
@@ -41,28 +41,19 @@ object XrayConfigBuilder {
                 .put("statsOutboundUplink", true)
                 .put("statsOutboundDownlink", true)))
 
-        // ── inbounds ──────────────────────────────────────────────────────────
-        val sniffing = JSONObject()
-            .put("enabled", true)
-            .put("destOverride", JSONArray(listOf("http", "tls", "quic")))
-
-        val tunInbound = JSONObject()
-            .put("tag", "tun")
-            .put("protocol", "tun")
-            .put("settings", JSONObject()
-                .put("name", "xray0")
-                .put("MTU", mtu)
-                .put("userLevel", 8))
-            .put("sniffing", JSONObject(sniffing.toString()))
-
+        // ── inbound ───────────────────────────────────────────────────────────
+        // A single SOCKS inbound. hev-socks5-tunnel (TProxyService) reads the VPN
+        // tun device and forwards every packet here; the core proxies it onward.
         val socksInbound = JSONObject()
             .put("tag", "socks-in")
             .put("port", socksPort)
             .put("listen", "127.0.0.1")
             .put("protocol", "socks")
             .put("settings", JSONObject().put("auth", "noauth").put("udp", true).put("userLevel", 8))
-            .put("sniffing", JSONObject(sniffing.toString()))
-        root.put("inbounds", JSONArray().put(tunInbound).put(socksInbound))
+            .put("sniffing", JSONObject()
+                .put("enabled", true)
+                .put("destOverride", JSONArray(listOf("http", "tls", "quic"))))
+        root.put("inbounds", JSONArray().put(socksInbound))
 
         // ── DNS ───────────────────────────────────────────────────────────────
         root.put("dns", JSONObject()

@@ -57,6 +57,12 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // Compress native libs inside the APK (extracted on install). Keeps the
+        // standalone APK well under GitHub's 100 MB file limit; the Play AAB is
+        // optimised per-device regardless.
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
