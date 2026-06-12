@@ -18,6 +18,11 @@ object XrayConfigBuilder {
 
     const val SOCKS_PORT = 10808
 
+    private val PRIVATE_CIDRS = listOf(
+        "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
+        "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fc00::/7", "fe80::/10"
+    )
+
     fun build(server: ServerConfig, socksPort: Int = SOCKS_PORT, mtu: Int = 1500): String {
         val root = JSONObject()
 
@@ -72,17 +77,21 @@ object XrayConfigBuilder {
         root.put("outbounds", outbounds)
 
         // ── routing ──────────────────────────────────────────────────────────
+        // Bypass LAN/private destinations with explicit CIDRs instead of
+        // "geoip:private": the gomobile core build fails to build geoip-based
+        // rules ("failed to build routing configuration"), and explicit ranges
+        // need no geoip.dat at all.
         val rules = JSONArray()
             .put(JSONObject()
                 .put("type", "field")
-                .put("ip", JSONArray(listOf("geoip:private")))
-                .put("outboundTag", "direct"))
+                .put("outboundTag", "direct")
+                .put("ip", JSONArray(PRIVATE_CIDRS)))
             .put(JSONObject()
                 .put("type", "field")
-                .put("protocol", JSONArray(listOf("bittorrent")))
-                .put("outboundTag", "direct"))
+                .put("outboundTag", "direct")
+                .put("protocol", JSONArray(listOf("bittorrent"))))
         root.put("routing", JSONObject()
-            .put("domainStrategy", "IPIfNonMatch")
+            .put("domainStrategy", "AsIs")
             .put("rules", rules))
 
         return root.toString(2)
