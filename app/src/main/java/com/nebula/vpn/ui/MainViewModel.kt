@@ -53,6 +53,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _pingingAll = MutableStateFlow(false)
     val pingingAll: StateFlow<Boolean> = _pingingAll.asStateFlow()
 
+    private val _autoSelecting = MutableStateFlow(false)
+    val autoSelecting: StateFlow<Boolean> = _autoSelecting.asStateFlow()
+
     val vpnState: StateFlow<VpnState> = VpnManager.state
     val vpnMessage: StateFlow<String> = VpnManager.message
     val downlink: StateFlow<Long> = VpnManager.downlink
@@ -114,9 +117,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Ping the first [count] servers (used right after a refresh to surface fast nodes). */
-    fun pingTop(count: Int = 12) {
-        servers.value.take(count).forEach { ping(it) }
+    /**
+     * Ping a sample of servers and auto-select the one with the lowest latency.
+     * Keeps the sample modest so the pick is fast; results also populate the list.
+     */
+    fun autoSelectOptimal(sampleSize: Int = 50, concurrency: Int = 32) {
+        if (_autoSelecting.value) return
+        val candidates = servers.value.take(sampleSize)
+        if (candidates.isEmpty()) return
+        _autoSelecting.value = true
+        viewModelScope.launch {
+            val gate = Semaphore(concurrency)
+            candidates.map { server ->
+                launch {
+                    gate.withPermit {
+                        val ms = SubscriptionRepository.tcpPing(server)
+                        _pings.update { it + (server.id to ms) }
+                    }
+                }
+            }.joinAll()
+            // Pick the reachable candidate with the lowest latency.
+            val best = candidates
+                .mapNotNull { s -> _pings.value[s.id]?.takeIf { it >= 0 }?.let { s to it } }
+                .minByOrNull { it.second }?.first
+            if (best != null) {
+                setSelected(best)
+            } else {
+                _error.value = "Не удалось найти доступный сервер — попробуй «Пинг всех»."
+            }
+            _autoSelecting.value = false
+        }
     }
 
     /**

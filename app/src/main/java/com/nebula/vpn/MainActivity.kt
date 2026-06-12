@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Power
@@ -85,6 +86,7 @@ private fun HomeScreen(vm: MainViewModel) {
     val downlink by vm.downlink.collectAsState()
     val uplink by vm.uplink.collectAsState()
     val pingingAll by vm.pingingAll.collectAsState()
+    val autoSelecting by vm.autoSelecting.collectAsState()
 
     var query by remember { mutableStateOf("") }
     val filtered = remember(servers, query) {
@@ -193,18 +195,41 @@ private fun HomeScreen(vm: MainViewModel) {
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                TextButton(onClick = { vm.pingAll() }, enabled = !pingingAll) {
-                    if (pingingAll) {
-                        CircularProgressIndicator(
-                            Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        Icon(Icons.Filled.Bolt, null, Modifier.size(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = { vm.autoSelectOptimal() },
+                        enabled = !autoSelecting && servers.isNotEmpty(),
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        if (autoSelecting) {
+                            CircularProgressIndicator(
+                                Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (autoSelecting) "Подбор…" else "Авто")
                     }
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (pingingAll) "Пингую…" else "Пинг всех")
+                    TextButton(
+                        onClick = { vm.pingAll() },
+                        enabled = !pingingAll,
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        if (pingingAll) {
+                            CircularProgressIndicator(
+                                Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(Icons.Filled.Bolt, null, Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (pingingAll) "Пинг…" else "Пинг всех")
+                    }
                 }
             }
 

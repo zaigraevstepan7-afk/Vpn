@@ -181,7 +181,8 @@ object XrayConfigBuilder {
                 stream.put("tlsSettings", JSONObject().apply {
                     val server = s.sni.ifEmpty { s.host.ifEmpty { s.address } }
                     put("serverName", server)
-                    put("allowInsecure", s.allowInsecure)
+                    // NOTE: "allowInsecure" was removed from current Xray-core's JSON
+                    // config parser (it now aborts the build), so we no longer emit it.
                     if (s.alpn.isNotEmpty()) put("alpn", JSONArray(s.alpn.split(",")))
                     if (s.fingerprint.isNotEmpty()) put("fingerprint", s.fingerprint)
                 })
