@@ -1,0 +1,96 @@
+package com.nebula.vpn.proxy
+
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.URL
+
+/**
+ * Owns the list of servers: fetching a subscription URL, parsing it, caching the
+ * raw text to SharedPreferences, and TCP-pinging individual servers.
+ *
+ * No third-party HTTP/JSON libraries — HttpURLConnection + org.json keep the app tiny.
+ */
+class SubscriptionRepository(context: Context) {
+
+    private val prefs = context.applicationContext
+        .getSharedPreferences("nebula", Context.MODE_PRIVATE)
+
+    var subscriptionUrl: String
+        get() = prefs.getString(KEY_URL, DEFAULT_SUBSCRIPTION) ?: DEFAULT_SUBSCRIPTION
+        set(value) = prefs.edit().putString(KEY_URL, value).apply()
+
+    /** Load whatever was cached on the last successful fetch. */
+    fun loadCached(): List<ServerConfig> {
+        val raw = prefs.getString(KEY_RAW, null) ?: return emptyList()
+        return parse(raw)
+    }
+
+    /** Download the subscription, parse it, and cache the raw text. */
+    suspend fun refresh(url: String = subscriptionUrl): List<ServerConfig> =
+        withContext(Dispatchers.IO) {
+            val raw = httpGet(url)
+            prefs.edit().putString(KEY_RAW, raw).putString(KEY_URL, url).apply()
+            parse(raw)
+        }
+
+    private fun parse(raw: String): List<ServerConfig> {
+        // Some subscriptions wrap the whole body in base64; detect and unwrap.
+        val text = if (looksLikeUriList(raw)) raw else decodeIfBase64(raw)
+        return text.lineSequence()
+            .mapNotNull { ServerConfig.parse(it) }
+            .toList()
+    }
+
+    private fun looksLikeUriList(s: String): Boolean =
+        SCHEMES.any { s.contains(it) }
+
+    private fun decodeIfBase64(s: String): String =
+        runCatching { ServerConfig.b64Decode(s.replace("\n", "").replace("\r", "")) }
+            .getOrDefault(s)
+
+    private fun httpGet(urlStr: String): String {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 15_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "NebulaVPN/1.0")
+        }
+        try {
+            conn.inputStream.bufferedReader().use { return it.readText() }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    companion object {
+        // The subscription the project ships with. Replace it in-app at any time.
+        const val DEFAULT_SUBSCRIPTION =
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/v2ray/all_sub.txt"
+
+        private val SCHEMES = listOf("vmess://", "vless://", "trojan://", "ss://")
+        private const val KEY_RAW = "sub_raw"
+        private const val KEY_URL = "sub_url"
+
+        /**
+         * Latency in ms of a raw TCP handshake to the server, or -1 on failure.
+         * Cheap, dependency-free reachability hint (not a real proxy round-trip).
+         */
+        suspend fun tcpPing(server: ServerConfig, timeoutMs: Int = 3_000): Long =
+            withContext(Dispatchers.IO) {
+                val socket = Socket()
+                try {
+                    val start = System.currentTimeMillis()
+                    socket.connect(InetSocketAddress(server.address, server.port), timeoutMs)
+                    System.currentTimeMillis() - start
+                } catch (e: Exception) {
+                    -1L
+                } finally {
+                    runCatching { socket.close() }
+                }
+            }
+    }
+}
