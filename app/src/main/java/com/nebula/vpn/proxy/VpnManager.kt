@@ -25,7 +25,19 @@ object VpnManager {
     private val _uplink = MutableStateFlow(0L)
     val uplink: StateFlow<Long> = _uplink.asStateFlow()
 
-    fun setState(s: VpnState) { _state.value = s }
+    // Epoch millis when the tunnel last came up (0 when not connected) — for the session timer.
+    private val _connectedSince = MutableStateFlow(0L)
+    val connectedSince: StateFlow<Long> = _connectedSince.asStateFlow()
+
+    fun setState(s: VpnState) {
+        if (s == VpnState.CONNECTED && _state.value != VpnState.CONNECTED) {
+            _connectedSince.value = System.currentTimeMillis()
+        } else if (s != VpnState.CONNECTED) {
+            _connectedSince.value = 0L
+        }
+        _state.value = s
+    }
+
     fun setActiveServer(s: ServerConfig?) { _activeServer.value = s }
     fun setMessage(m: String) { _message.value = m }
 

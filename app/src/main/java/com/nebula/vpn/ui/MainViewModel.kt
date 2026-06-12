@@ -60,6 +60,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val vpnMessage: StateFlow<String> = VpnManager.message
     val downlink: StateFlow<Long> = VpnManager.downlink
     val uplink: StateFlow<Long> = VpnManager.uplink
+    val connectedSince: StateFlow<Long> = VpnManager.connectedSince
 
     var subscriptionUrl: String
         get() = repo.subscriptionUrl
