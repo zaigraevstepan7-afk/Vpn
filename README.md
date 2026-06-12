@@ -1,6 +1,8 @@
-# Nebula VPN
+# Root VPN
 
-Android-клиент для прокси-протоколов **VMess / VLESS / Trojan / Shadowsocks**, написанный на **Kotlin + Jetpack Compose**. Принимает на вход v2ray-подписку (ссылку со списком конфигов), парсит её, показывает список серверов с пингом и поднимает системный VPN-туннель через `VpnService`.
+Android-клиент для прокси-протоколов **VMess / VLESS / Trojan / Shadowsocks**, написанный на **Kotlin + Jetpack Compose**. Принимает на вход v2ray-подписку (ссылку со списком конфигов), парсит её, показывает список серверов с пингом/флагами стран и поднимает системный VPN-туннель через `VpnService`.
+
+**Функции UI:** минималистичный тёмный дизайн, большая кнопка подключения с пульсацией и таймером сессии, геолокация в реальном времени (флаг + страна + IP, через прокси когда подключён), скорость ↓/↑ в реальном времени, флаг страны у каждого сервера, избранное (звёзды, закрепляются вверху), сортировка по пингу, автоподбор оптимального сервера, «Пинг всех».
 
 По архитектуре и поведению это аналог [v2rayNG](https://github.com/2dust/v2rayNG), но с нуля, компактнее и под одну конкретную задачу.
 
@@ -125,6 +127,39 @@ CoreController.factory = { com.nebula.vpn.core.XrayCore() }
 - (SSR — 40 пропущено осознанно)
 
 Поля (id/host/path/sni/method/password и т.д.) извлекаются верно, парсер устойчив к emoji и пробелам в remark'ах и к IPv6-адресам.
+
+---
+
+## Публикация в Google Play
+
+Технически приложение готово к загрузке: `applicationId = com.rootvpn.app`, релизная сборка с R8 (minify + shrinkResources), per-ABI split в `.aab`.
+
+### 1. Собрать `.aab`
+Локально:
+```bash
+mkdir -p app/libs
+curl -fL -o app/libs/libv2ray.aar \
+  https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.6.2/libv2ray.aar
+./gradlew bundleRelease
+# результат: app/build/outputs/bundle/release/app-release.aab
+```
+Или через workflow `.github/workflows/release-aab.yml` (вкладка **Actions** → Run workflow, либо `git tag v1.0.0 && git push --tags`).
+
+### 2. Подписать (свой ключ загрузки)
+```bash
+keytool -genkey -v -keystore upload.jks -keyalg RSA -keysize 2048 \
+  -validity 10000 -alias upload
+```
+Для подписи в CI добавь секреты репозитория: `KEYSTORE_BASE64` (`base64 upload.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` — workflow подпишет `.aab` автоматически. **Ключ и пароли не коммить.**
+
+### 3. Что понадобится в Play Console (это уже не код)
+- Аккаунт разработчика Google Play (разовый взнос $25).
+- **Privacy Policy** (обязательно для VPN) — публичная ссылка.
+- Декларация в разделе **App access** и **Data safety** (какие данные собираются — здесь: подписка/выбор хранятся локально, телеметрии нет).
+- Соответствие политике **VPNService**: приложение использует `VpnService` только для основной функции (туннель), что разрешено.
+- Иконка 512×512, скриншоты, описание, возрастной рейтинг.
+
+> ⚠️ Дисклеймер по контенту: подписка по умолчанию — сторонний публичный список нод. Для публикации в сторе лучше подключить свою/доверенную подписку и убрать чужую, чтобы не зависеть от чужой инфраструктуры и не нарушать ничьих правил.
 
 ---
 

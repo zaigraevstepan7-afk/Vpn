@@ -41,6 +41,11 @@ class SubscriptionRepository(context: Context) {
         get() = prefs.getString(KEY_SELECTED, null)
         set(value) = prefs.edit().putString(KEY_SELECTED, value).apply()
 
+    /** Ids the user starred. Pinned to the top of the list and persisted. */
+    var favorites: Set<String>
+        get() = prefs.getStringSet(KEY_FAVS, emptySet())?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_FAVS, value).apply()
+
     /** Load whatever was cached on the last successful fetch. */
     fun loadCached(): List<ServerConfig> {
         val raw = prefs.getString(KEY_RAW, null) ?: return emptyList()
@@ -98,6 +103,7 @@ class SubscriptionRepository(context: Context) {
         private const val KEY_RAW = "sub_raw"
         private const val KEY_URL = "sub_url"
         private const val KEY_SELECTED = "selected_id"
+        private const val KEY_FAVS = "favorite_ids"
 
         /**
          * Latency in ms of a raw TCP handshake to the server, or -1 on failure.

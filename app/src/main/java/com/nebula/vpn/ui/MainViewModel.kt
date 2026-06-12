@@ -56,6 +56,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _autoSelecting = MutableStateFlow(false)
     val autoSelecting: StateFlow<Boolean> = _autoSelecting.asStateFlow()
 
+    private val _favorites = MutableStateFlow(repo.favorites)
+    val favorites: StateFlow<Set<String>> = _favorites.asStateFlow()
+
     val vpnState: StateFlow<VpnState> = VpnManager.state
     val vpnMessage: StateFlow<String> = VpnManager.message
     val downlink: StateFlow<Long> = VpnManager.downlink
@@ -105,6 +108,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun select(server: ServerConfig) = setSelected(server)
+
+    fun toggleFavorite(server: ServerConfig) {
+        val next = _favorites.value.toMutableSet().apply {
+            if (!add(server.id)) remove(server.id)
+        }
+        _favorites.value = next
+        repo.favorites = next
+    }
 
     private fun setSelected(server: ServerConfig?) {
         _selected.value = server

@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nebula.vpn.proxy.CountryFlags
 import com.nebula.vpn.proxy.Protocol
 import com.nebula.vpn.proxy.ServerConfig
 import com.nebula.vpn.proxy.V2RayVpnService
@@ -106,15 +109,18 @@ private fun HomeScreen(vm: MainViewModel) {
     val pingingAll by vm.pingingAll.collectAsState()
     val autoSelecting by vm.autoSelecting.collectAsState()
     val connectedSince by vm.connectedSince.collectAsState()
+    val favorites by vm.favorites.collectAsState()
 
     var query by remember { mutableStateOf("") }
     var sortByPing by remember { mutableStateOf(false) }
 
-    val displayed = remember(servers, query, pings, sortByPing) {
+    val displayed = remember(servers, query, pings, sortByPing, favorites) {
         val base = if (query.isBlank()) servers
         else servers.filter { it.remark.contains(query, true) || it.address.contains(query, true) }
-        if (!sortByPing) base
+        val sorted = if (!sortByPing) base
         else base.sortedBy { s -> pings[s.id]?.takeIf { it >= 0 } ?: Long.MAX_VALUE }
+        // Starred servers pinned to the top (stable sort preserves the order above).
+        sorted.sortedByDescending { it.id in favorites }
     }
 
     // Ticking session timer (only while connected).
@@ -157,7 +163,7 @@ private fun HomeScreen(vm: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Nebula", color = OnBg, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                    Text("Root VPN", color = OnBg, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                     Text("${servers.size} серверов", color = Muted, fontSize = 12.sp)
                 }
                 IconButton(onClick = { vm.refresh() }, enabled = !loading) {
@@ -206,8 +212,10 @@ private fun HomeScreen(vm: MainViewModel) {
                     ServerRow(
                         server = server,
                         selected = server.id == selected?.id,
+                        favorite = server.id in favorites,
                         ping = pings[server.id],
-                        onClick = { vm.select(server) }
+                        onClick = { vm.select(server) },
+                        onFavorite = { vm.toggleFavorite(server) }
                     )
                 }
             }
@@ -274,13 +282,20 @@ private fun ConnectHero(state: VpnState, server: ServerConfig?, elapsedMs: Long,
         Spacer(Modifier.height(6.dp))
         Text(label, color = color, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
 
-        if (state == VpnState.CONNECTED && elapsedMs > 0) {
-            Text(formatDuration(elapsedMs), color = Muted, fontSize = 13.sp,
-                fontWeight = FontWeight.Medium)
-        } else {
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 32.dp)) {
+            if (server != null) {
+                Text(CountryFlags.flagFor(server), fontSize = 18.sp)
+                Spacer(Modifier.width(6.dp))
+            }
             Text(server?.remark ?: "Сервер не выбран", color = Muted, fontSize = 13.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 32.dp))
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+
+        if (state == VpnState.CONNECTED && elapsedMs > 0) {
+            Text(formatDuration(elapsedMs), color = Green, fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -415,24 +430,45 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
 
 // ── server row ──────────────────────────────────────────────────────────────────
 @Composable
-private fun ServerRow(server: ServerConfig, selected: Boolean, ping: Long?, onClick: () -> Unit) {
+private fun ServerRow(
+    server: ServerConfig,
+    selected: Boolean,
+    favorite: Boolean,
+    ping: Long?,
+    onClick: () -> Unit,
+    onFavorite: () -> Unit
+) {
     Surface(
         onClick = onClick,
         color = if (selected) Accent.copy(alpha = 0.12f) else Surface1,
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            PingDot(ping)
+        Row(Modifier.padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            // Country flag for the server.
+            Text(CountryFlags.flagFor(server), fontSize = 26.sp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(server.remark, color = OnBg, fontWeight = FontWeight.Medium,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PingDot(ping)
+                    Spacer(Modifier.width(6.dp))
+                    Text(server.remark, color = OnBg, fontWeight = FontWeight.Medium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 Spacer(Modifier.height(2.dp))
                 Text("${server.protocol.display} • ${server.address}", color = Muted, fontSize = 12.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             PingLabel(ping)
+            IconButton(onClick = onFavorite) {
+                Icon(
+                    if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                    contentDescription = "В избранное",
+                    tint = if (favorite) Amber else Muted,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

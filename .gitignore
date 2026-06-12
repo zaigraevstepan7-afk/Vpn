@@ -15,3 +15,6 @@
 /app/libs/*.aar
 # keep the wrapper jar tracked (needed for ./gradlew on a clean checkout)
 !gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin compiler scratch
+.kotlin/

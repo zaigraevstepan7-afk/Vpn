@@ -9,11 +9,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.nebula.vpn"
+        applicationId = "com.rootvpn.app"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         // The native Xray core (libgojni.so) ships for several ABIs inside
         // libv2ray.aar. Limit the packaged set to keep the APK reasonable.
@@ -24,12 +24,20 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 shrink + obfuscate, and strip unused resources → smaller Play upload.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
+    }
+
+    // The Play Console accepts an .aab; split the native libs per ABI so each
+    // device only downloads its own (the geoip/geosite data stays shared).
+    bundle {
+        abi { enableSplit = true }
     }
 
     compileOptions {
